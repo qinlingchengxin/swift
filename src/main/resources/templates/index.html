@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+
+    <title>swift upload demo</title>
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <script th:src="@{/webjars/jquery/3.1.1/jquery.js}"></script>
+    <script type="text/javascript">
+    </script>
+</head>
+
+<body>
+<form action="upload" enctype="multipart/form-data" method="post">
+    文件：<input type="file" name="file"/><br/>
+    <input type="submit" value="上传"/>
+</form>
+
+<a href="split/upload">分片上传测试</a>
+</body>
+</html>

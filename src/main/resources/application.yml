@@ -1,0 +1,22 @@
+spring:
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      max-file-size: 1024MB
+      max-request-size: 1024MB
+
+server:
+  port: 8080
+  servlet:
+    context-path: /swift
+
+swift:
+  url: http://10.40.40.144:8081/auth/v1.0
+  user: test:tester
+  pass: testing
+  perLen: 20
+  srcFilePath: E:/test.zip
+  desPath: E:/hello/
+  container: zl_files
+  segContainer: zl_files_segments

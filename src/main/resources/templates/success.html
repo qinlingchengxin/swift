@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>swift upload demo</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <script th:src="@{/webjars/jquery/3.1.1/jquery.js}"></script>
+    <script type="text/javascript">
+    </script>
+</head>
+
+<body>
+upload success!<br/>
+use time: <span th:text="${use_time}"> </span><br/>
+store file name: <span th:text="${gen_file_name}"> </span><br/>
+<a th:href="@{'download?fileName='+${gen_file_name}}">点击下载</a>
+</body>
+</html>
