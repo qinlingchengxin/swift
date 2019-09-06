@@ -52,6 +52,12 @@
             <artifactId>httpmime</artifactId>
             <version>4.3.3</version>
         </dependency>
+
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.4</version>
+        </dependency>
         <!--http client 上传文件用-->
 
         <dependency>

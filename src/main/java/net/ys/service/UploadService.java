@@ -7,7 +7,6 @@ import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
-import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPut;
@@ -20,7 +19,6 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,18 +53,25 @@ public class UploadService {
     @Value("${swift.perLen}")
     private int perLen;
 
-    Header storageUrl;
+    String storageUrl;
     Header authToken;
 
     public void genUrlAndToken() throws IOException {
         if (storageUrl == null || authToken == null) {
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpGet req = new HttpGet(swiftUrl);
-            req.addHeader("X-Storage-User", swiftUser);
-            req.addHeader("X-Storage-Pass", swiftPass);
-            HttpResponse rsp = httpClient.execute(req);
-            storageUrl = rsp.getFirstHeader("X-Storage-Url");
-            authToken = rsp.getFirstHeader("X-Auth-Token");
+            CloseableHttpClient httpClient = null;
+            try {
+                httpClient = HttpClients.createDefault();
+                HttpGet req = new HttpGet(swiftUrl);
+                req.addHeader("X-Storage-User", swiftUser);
+                req.addHeader("X-Storage-Pass", swiftPass);
+                HttpResponse rsp = httpClient.execute(req);
+                storageUrl = rsp.getFirstHeader("X-Storage-Url").getValue();
+                authToken = rsp.getFirstHeader("X-Auth-Token");
+            } finally {
+                if (httpClient != null) {
+                    httpClient.close();
+                }
+            }
         }
     }
 
@@ -82,33 +87,31 @@ public class UploadService {
      * @throws IOException
      */
     public String uploadFile(InputStream stream, String container, String storeName) throws IOException {
-        HttpPut httpPut = new HttpPut(storageUrl.getValue() + "/" + container + "/" + storeName);
-
-        /*InputStreamEntity inputStreamEntity = new InputStreamEntity(stream);
-        httpPut.setEntity(inputStreamEntity);//这种方式容易引起异常*/
-
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        byte[] bytes = new byte[2048];
-        int len;
-        while ((len = stream.read(bytes)) > 0) {
-            bos.write(bytes, 0, len);
-        }
-        httpPut.setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray())));
-        bos.close();
-
-        httpPut.setHeader(authToken);
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        CloseableHttpResponse response = httpClient.execute(httpPut);
+        CloseableHttpClient httpClient = null;
         try {
+            httpClient = HttpClients.createDefault();
+            HttpPut httpPut = new HttpPut(storageUrl + "/" + container + "/" + storeName);
+            httpPut.setHeader(authToken);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] bytes = new byte[2048];
+            int len;
+            while ((len = stream.read(bytes)) > 0) {
+                bos.write(bytes, 0, len);
+            }
+            bos.close();
+
+            httpPut.setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray())));
+            HttpResponse response = httpClient.execute(httpPut);
             int code = response.getStatusLine().getStatusCode();
             if (code < 300) {
                 return response.getFirstHeader("Etag").getValue();
             }
+            return null;
         } finally {
-            response.close();
+            if (httpClient != null) {
+                httpClient.close();
+            }
         }
-
-        return null;
     }
 
     public HttpEntity download(String fileName) throws IOException {
@@ -122,15 +125,21 @@ public class UploadService {
      * @param fileName
      */
     public HttpEntity downloadFile(String fileName) throws IOException {
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        HttpGet httpget = new HttpGet(storageUrl.getValue() + "/" + container + "/" + fileName);
-        httpget.addHeader(authToken);
-        HttpResponse response = httpClient.execute(httpget);
-        if (HttpStatus.SC_OK == response.getStatusLine().getStatusCode()) {
-            return response.getEntity();
+        CloseableHttpClient httpClient = null;
+        try {
+            httpClient = HttpClients.createDefault();
+            HttpGet httpget = new HttpGet(storageUrl + "/" + container + "/" + fileName);
+            httpget.addHeader(authToken);
+            HttpResponse response = httpClient.execute(httpget);
+            if (HttpStatus.SC_OK == response.getStatusLine().getStatusCode()) {
+                return response.getEntity();
+            }
+            return null;
+        } finally {
+            if (httpClient != null) {
+                httpClient.close();
+            }
         }
-
-        return null;
     }
 
     /**
@@ -236,23 +245,21 @@ public class UploadService {
      * @throws IOException
      */
     public boolean merge(String tempName, String data) throws IOException {
-        CloseableHttpResponse response = null;
+        CloseableHttpClient httpClient = null;
         try {
-            HttpPut httpPut = new HttpPut(storageUrl.getValue() + "/" + container + "/" + tempName + "?multipart-manifest=put");
+            httpClient = HttpClients.createDefault();
+            HttpPut httpPut = new HttpPut(storageUrl + "/" + container + "/" + tempName + "?multipart-manifest=put");
+            httpPut.setHeader(authToken);
             ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(data.getBytes());
             InputStreamEntity inputStreamEntity = new InputStreamEntity(byteArrayInputStream);
             httpPut.setEntity(inputStreamEntity);
-            httpPut.setHeader(authToken);
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            response = httpClient.execute(httpPut);
+            HttpResponse response = httpClient.execute(httpPut);
             return response.getStatusLine().getStatusCode() < 300;
-        } catch (Exception e) {
         } finally {
-            if (response != null) {
-                response.close();
+            if (httpClient != null) {
+                httpClient.close();
             }
         }
-        return false;
     }
 
     /**
@@ -262,120 +269,19 @@ public class UploadService {
      * @param fileName
      */
     public boolean deleteFile(String containerName, String fileName) throws IOException {
-        genUrlAndToken();
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        HttpDelete httpDelete = new HttpDelete(storageUrl.getValue() + "/" + containerName + "/" + fileName);
-        httpDelete.addHeader(authToken);
-        HttpResponse response = httpClient.execute(httpDelete);
-        int resultCode = response.getStatusLine().getStatusCode();
-        if (resultCode < 300) {
-            /*HttpEntity entity = response.getEntity();//删除文件会将删除的文件流返回客户端
-            if (entity != null) {
-                InputStream stream = entity.getContent();
-            }*/
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 创建Container
-     *
-     * @param containerName
-     */
-    public boolean createContainer(String containerName) {
+        CloseableHttpClient httpClient = null;
         try {
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpPut hpp = new HttpPut(storageUrl.getValue() + "/" + containerName);
-            hpp.addHeader(authToken);
-            CloseableHttpResponse response = httpClient.execute(hpp);
-            int code = response.getStatusLine().getStatusCode();
-            return code < 300;
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-        }
-        return false;
-    }
-
-    /**
-     * 删除容器(容器内不能有对象)
-     *
-     * @param containerName
-     */
-    public boolean deleteContainer(String containerName) {
-        try {
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpDelete httpDelete = new HttpDelete(storageUrl.getValue() + "/" + containerName);
+            genUrlAndToken();
+            httpClient = HttpClients.createDefault();
+            HttpDelete httpDelete = new HttpDelete(storageUrl + "/" + containerName + "/" + fileName);
             httpDelete.addHeader(authToken);
             HttpResponse response = httpClient.execute(httpDelete);
-            int code = response.getStatusLine().getStatusCode();
-            return code < 300;
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-        }
-        return false;
-    }
-
-    /**
-     * 获取容器列表
-     */
-    public List<String> getContainers() {
-        try {
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(storageUrl.getValue());
-            httpGet.addHeader(authToken);
-            HttpResponse response = httpClient.execute(httpGet);
-            int code = response.getStatusLine().getStatusCode();
-            if (code < 300) {
-                HttpEntity entity = response.getEntity();
-                if (entity != null) {
-                    InputStream input = entity.getContent();
-                    ByteArrayOutputStream aos = new ByteArrayOutputStream();
-                    byte b[] = new byte[1024];
-                    int j;
-                    while ((j = input.read(b)) != -1) {
-                        aos.write(b, 0, j);
-                    }
-                    String result = new String(aos.toByteArray());
-                    return Arrays.asList(result.split("\n"));
-                }
+            return response.getStatusLine().getStatusCode() < 300;
+        } finally {
+            if (httpClient != null) {
+                httpClient.close();
             }
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
         }
-        return null;
-    }
-
-    /**
-     * 获取容器内对象列表
-     *
-     * @param containerName 容器名称
-     */
-    public List<String> getObjects(String containerName) {
-        try {
-            CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(storageUrl.getValue() + "/" + containerName);
-            httpGet.addHeader(authToken);
-            HttpResponse response = httpClient.execute(httpGet);
-            int code = response.getStatusLine().getStatusCode();
-            if (code < 300) {
-                HttpEntity entity = response.getEntity();
-                if (entity != null) {
-                    InputStream input = entity.getContent();
-                    ByteArrayOutputStream aos = new ByteArrayOutputStream();
-                    byte b[] = new byte[1024];
-                    int j;
-                    while ((j = input.read(b)) != -1) {
-                        aos.write(b, 0, j);
-                    }
-                    String result = new String(aos.toByteArray());
-                    return Arrays.asList(result.split("\n"));
-                }
-            }
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-        }
-        return null;
     }
 
     public String getContainer() {
